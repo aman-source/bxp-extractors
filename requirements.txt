@@ -1,0 +1,17 @@
+streamlit
+python-dotenv
+mistralai
+azure-ai-formrecognizer  
+azure_ai_documentintelligence
+os
+base64
+anthropic
+mistralai
+google-generativeai
+Pillow
+fitz
+pypdf2
+sqlalchemy
+psycopg2-binary
+boto3
+azure-storage-blob
