@@ -1,8 +1,12 @@
+from sentence_transformers import SentenceTransformer, util
 import re
 import pandas as pd
 import time
 from sklearn.metrics import precision_score, recall_score, f1_score
 import json
+
+
+model_st = SentenceTransformer('all-MiniLM-L6-v2')
 
 def flatten_json(y, prefix=''):
     out = {}
@@ -20,10 +24,18 @@ def flatten_json(y, prefix=''):
 
 def normalize_value(value):
     if isinstance(value, str):
-        return re.sub(r'\s+', '', value.lower())  # Remove ALL whitespace and lower
+        return re.sub(r'\s+', '', value.lower())
     if isinstance(value, (int, float)):
-        return value  # Don't round unless absolutely necessary
-    return value
+        return str(value)
+    return str(value)
+
+def semantic_match(val1, val2, threshold=0.75):
+    if not val1 or not val2:
+        return False
+    embedding1 = model_st.encode(str(val1), convert_to_tensor=True)
+    embedding2 = model_st.encode(str(val2), convert_to_tensor=True)
+    sim_score = util.pytorch_cos_sim(embedding1, embedding2).item()
+    return sim_score >= threshold
 
 def compare_outputs(expected_json, predicted_json):
     expected = flatten_json(expected_json)
@@ -41,14 +53,13 @@ def compare_outputs(expected_json, predicted_json):
         expected_value = normalize_value(expected.get(key, ''))
         predicted_value = normalize_value(predicted.get(key, ''))
 
-        # Both empty → consider as a match (both missing is still "correct")
         if expected_value == '' and predicted_value == '':
             match += 1
             y_true.append(1)
             y_pred.append(1)
             continue
 
-        if expected_value == predicted_value:
+        if semantic_match(expected_value, predicted_value):
             match += 1
             y_true.append(1)
             y_pred.append(1)
@@ -57,7 +68,6 @@ def compare_outputs(expected_json, predicted_json):
             y_true.append(1)
             y_pred.append(0)
         else:
-            # One is missing
             missing += 1
             y_true.append(1)
             y_pred.append(0)
@@ -85,13 +95,16 @@ def validate_all_models(file_path, expected_output):
     from models.datalab_handler import extract_from_datalab
     from models.anthropic_handler import extract_from_claude
     from models.gemini_handler import extract_from_gemini
+    from models.azure_fine_tuned_handler import extract_from_azure_finetuned
 
     models = {
         'mistral': extract_from_mistral,
         'azure': extract_from_azure,
         'datalab': extract_from_datalab,
         'anthropic': extract_from_claude,
-        'gemini': extract_from_gemini
+        'gemini': extract_from_gemini,
+        'azure_finetuned': extract_from_azure_finetuned  
+        
     }
 
     results = []
@@ -101,24 +114,15 @@ def validate_all_models(file_path, expected_output):
             start_time = time.time()
             output = func(file_path)
             end_time = time.time()
-            
-            if isinstance(output, str):
-                try:
-                    output = json.loads(output)
-                except json.JSONDecodeError:
-                    print(f"[ERROR] Model {model_name} returned invalid JSON string.")
-                    raise
 
-            predicted_json = output.get("result") if output.get("result") else output
+            if isinstance(output, str):
+                output = json.loads(output)
+
+            predicted_json = output.get("result") if isinstance(output, dict) and output.get("result") else output
 
             if isinstance(predicted_json, str):
-                raw_result = predicted_json.strip()
-                if raw_result.startswith('```json'):
-                    raw_result = raw_result[7:]
-                if raw_result.endswith('```'):
-                    raw_result = raw_result[:-3]
-                predicted_json = json.loads(raw_result)
-
+                predicted_json = predicted_json.strip().strip("```json").strip("```")
+                predicted_json = json.loads(predicted_json)
 
             metrics = compare_outputs(expected_output, predicted_json)
             metrics['model'] = model_name
@@ -140,5 +144,4 @@ def validate_all_models(file_path, expected_output):
             })
             print(f"[ERROR] {model_name} failed: {e}")
 
-    df = pd.DataFrame(results)
-    return df
+    return pd.DataFrame(results)

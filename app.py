@@ -7,6 +7,7 @@ from utils.db_utils import get_finetune_files, save_file_record
 from utils.file_utils import save_uploaded_file
 from utils.azure_finetune import train_model_on_azure
 
+
 # Load environment variables
 load_dotenv()
 DEFAULT_MODEL = os.getenv("ACTIVE_MODEL", "mistral")
@@ -21,7 +22,7 @@ st.session_state.setdefault("uploaded_file", None)
 
 uploaded_file = st.file_uploader("Upload scanned invoice (PDF or Image)", type=["pdf", "jpg", "jpeg", "png"])
 
-model_options = ["mistral", "azure", "datalab", "anthropic", "gemini"]
+model_options = ["mistral", "azure","azure finetuned", "datalab", "anthropic", "gemini"]
 DEFAULT_MODEL = st.selectbox("Choose Model", model_options, index=0)
 doc_type = st.radio("Document Type", ["Invoice", "Bank Statement"], horizontal=True)
 
@@ -50,6 +51,9 @@ if st.button("Extract Information"):
             elif DEFAULT_MODEL == "gemini":
                 from models.gemini_handler import extract_from_gemini
                 result = extract_from_gemini(saved_path, doc_type=doc_type)
+            elif DEFAULT_MODEL == "azure_finetuned":
+                from models.azure_fine_tuned_handler import extract_from_azure_finetuned
+                result = extract_from_azure_finetuned(saved_path, doc_type=doc_type)
             else:
                 result = {"error": f"Unknown model: {DEFAULT_MODEL}"}
 
